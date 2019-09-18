@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>模拟战旗游戏战场-大话主席</title>
+    <script src="js/jquery-1.8.0.min.js")"></script>
+    <link rel="stylesheet" href="css/Battlefield.css">
+</head>
+<body>
+    <header>
+        <h1 class="title">模拟战旗游戏战场-大话主席</h1>
+    </header>
+
+    <div id="content">
+        <div id="setting">
+            <ul class="state">
+               <li><i id="actionTurn"></i>行动</li><li>第<i id="turn"></i>回合</li> <!--<li>当前坐标：[<i id="curX">0</i>,<i id="curY">0</i>]--></li>
+            </ul>
+            <button id="btnRefresh">重置</button>
+            <button id="btnEnd">结束行动</button>
+            我方数量：<input type="number" id="btnOurTeamCount"  value="5" min="1" max="10" style="width:50px"/>
+            敌方数量：<input type="number" id="btnEnemyTeamCount"  value="7" min="1" max="10" style="width:50px"/>
+        </div>
+        <main id="main">
+            <canvas id="chessboard" width="1000" height="500"></canvas>
+            <div id="map"></div>
+            <div id="mainTip"></div>
+        </main>
+        <div id="print"></div>
+    </div>
+
+</body>
+</html>
+
+<script>
+    //全局设置===================================================
+    
+    //获取敌我双方数据
+    if(localStorage.zxSlgGame_ourTeamCount==undefined){
+        localStorage.zxSlgGame_ourTeamCount=5;
+        localStorage.zxSlgGame_enemyTeamCount=7;
+    }else{
+        $("#btnOurTeamCount").val(localStorage.zxSlgGame_ourTeamCount);
+        $("#btnEnemyTeamCount").val(localStorage.zxSlgGame_enemyTeamCount);
+        $("#btnOurTeamCount").change(function(){
+            localStorage.zxSlgGame_ourTeamCount = $("#btnOurTeamCount").val();
+        });
+        $("#btnEnemyTeamCount").change(function(){
+            localStorage.zxSlgGame_enemyTeamCount = $("#btnOurTeamCount").val();
+        });
+    }
+
+
+    var unitSize=20;       //单位尺寸
+    var ourTeam = new Array(parseInt(localStorage.zxSlgGame_ourTeamCount));
+    var enemyTeam = new Array(parseInt(localStorage.zxSlgGame_enemyTeamCount));
+    var obstacleTeam = new Array(200); //障碍物
+    var forbiddenPoint = new Array(); //禁止操作坐标组
+    var currentUnitId=0;
+    var turn=1;   //当前行动，2行动=1回合
+    var actionTurn=0;   //行动回合 1是我方，0是敌方
+    var scopes = new Array();
+    scopes[0] = [0];
+    scopes[1] = [1,3,4,5,7];
+    scopes[2] = [2,6,7,8,10,11,12,13,14,16,17,18,22];
+    scopes[3] = [3,9,10,11,15,16,17,18,19,21,22,23,24,25,26,27,29,30,31,32,33,37,38,39,45];
+
+    //对象======================================================
+    //棋盘对象
+    var Chessboard = function(){
+        this.init=function(){
+            //绘制棋盘
+            var c=document.getElementById("chessboard");
+            var ctx=c.getContext("2d");
+            for (let i = 0; i < 25; i++) {
+                for (let j = 0; j < 50; j++) {
+                    if(i%2==0){
+                        ctx.fillStyle=j%2==0?"#fff":"#f6f6f6";
+                    }else{
+                        ctx.fillStyle=j%2==0?"#f6f6f6":"#fff";
+                    }
+                    ctx.fillRect(unitSize*j,unitSize*i,unitSize,unitSize);
+                }
+            }
+        }
+    }
+
+    //地图对象
+    var Map = function(){
+        this.init=function(){
+            //绘制地图
+            for (let y = 0; y < 25; y++) {
+                for (let x = 0; x < 50; x++) {
+                    var mapUnit = '<div class="mapUnit" id="mapUnit_'+x+'_'+y+'" x="'+x+'" y="'+y+'" style="left:'+unitSize*x+'px; top:'+unitSize*y+'px"></div>';
+                    $("#map").append(mapUnit)
+                }
+            }
+        }
+    }
+
+    //单位对象
+    var Unit = function(){
+        this.attState=[1,1,1]; //[生存状态,移动状态,攻击状态/防御状态]
+        this.attID=0;
+        this.attTeam="our";
+        this.attName="";
+        this.attHP=100;
+        this.attAtt=50;
+        this.attDef=25;
+        this.attColor="#f00";
+        this.x=0;
+        this.y=0;
+        this.attMoveRange=3;
+        this.attAttackRange=1;
+        this.moveRange=[];
+        this.attackRange=[];
+        this.attBuff=[[0,0,0],[0,0,0]]; //buff状态[防御力,闪避率]（[值,持续回合,当前回合]）
+        this.attHitRate=90; //命中率
+        
+        //生成移动范围
+        this.creatMoveRange=function(){
+            this.moveRange=[];
+            var i=0;
+            for (let _x = -this.attMoveRange; _x < this.attMoveRange+1; _x++) {
+                for (let _y = -this.attMoveRange; _y < this.attMoveRange+1; _y++) {
+                    var x=this.x+_x;
+                    var y=this.y+_y;
+                    if(x>=0&&y>=0&&x<50&&y<25&& common.indexOf2Array([x,y],forbiddenPoint)==-1 && scopes[this.attMoveRange].indexOf(i)!=-1){
+                        this.moveRange.push([x,y])
+                        $("#mapUnit_"+x+"_"+y).addClass("moving");
+                    }
+                    i++;
+                }
+            }
+            return this.moveRange;
+        }
+        //生成攻击范围
+        this.creatAttackRange=function(){
+            this.attackRange=[];
+            var i=0;
+            for (let _x = -this.attAttackRange; _x < this.attAttackRange+1; _x++) {
+                for (let _y = -this.attAttackRange; _y < this.attAttackRange+1; _y++) {
+                    var x=this.x+_x;
+                    var y=this.y+_y;
+                    if(x>=0&&y>=0&&x<50&&y<25 && scopes[this.attAttackRange].indexOf(i)!=-1){
+                        this.attackRange.push([x,y])
+                        $("#mapUnit_"+x+"_"+y).addClass("attacking");
+                    }
+                    i++;
+                }
+            }
+            return this.attackRange;
+        }
+        //移动
+        this.move=function(x,y){
+            if(this.attState[1]==0) return;
+            //更新禁止操作坐标
+            forbiddenPoint[common.indexOf2Array([this.x,this.y],forbiddenPoint)] = [x,y];
+            this.x = x;
+            this.y = y;
+            var unitDiv = $("."+this.attName);
+            unitDiv.css("left",x*unitSize);
+            unitDiv.css("top",y*unitSize);
+            $(".mapUnit").removeClass("moving");
+            this.attState[1]=0;
+            unitDiv.find(".actMove").addClass("disable");
+            common.print("["+this.attName+"]移动到["+this.x+","+this.y+"]");
+            this.checkState();
+        }
+        //攻击
+        this.attack=function(targetUnit){
+            if( common.indexOf2Array([targetUnit.x,targetUnit.y],this.attackRange)==-1 || $(".attacking").length<1 || this.attState[2]==0) return;
+            var targetDiv = $("."+targetUnit.attName);
+            var unitDiv = $("."+this.attName);
+            var tipStr = "";
+
+            common.clearSelecting();
+
+            //命中计算
+            var hurt = 0;
+            var hitRandom = common.randomNum(1,100);
+            var hitRate = this.attHitRate - targetUnit.attBuff[1][0];
+            var hurRandom = common.randomNum(-5,5);
+            var attRate = this.attAtt;
+            var defRate =  targetUnit.attDef + targetUnit.attBuff[0][0]
+            
+            if( hitRandom <= hitRate ){
+                //伤害计算
+                hurt = attRate - defRate + hurRandom;
+                if(hurt<=0){
+                    hurt=0;
+                    tipStr = "格挡";
+                    common.print("["+this.attName+"]攻击["+targetUnit.attName+"]，命中["+[hitRandom,hitRate]+"]，攻防["+[attRate,defRate,hurRandom]+"](<span class='blue'>格挡成功！</span>伤害:"+hurt+"，剩余HP:"+targetUnit.attHP+")");
+                }else{
+                    targetUnit.attHP = targetUnit.attHP - hurt;
+                    tipStr = -hurt;
+                    common.print("["+this.attName+"]攻击["+targetUnit.attName+"]，命中["+[hitRandom,hitRate]+"]，攻防["+[attRate,defRate,hurRandom]+"](伤害:"+hurt+"，剩余HP:"+targetUnit.attHP+")");
+                }
+                common.updateAttPanel(targetUnit);
+            }else{
+                tipStr = "闪避";
+                common.print("["+this.attName+"]攻击["+targetUnit.attName+"]，命中["+[hitRandom,hitRate]+"]，攻防["+[attRate,defRate,hurRandom]+"](<span class='blue'>闪避成功！</span>伤害:"+hurt+"，剩余HP:"+targetUnit.attHP+")");
+            }
+
+            this.attState[2]=0;
+            
+            //动画提示效果
+            unitDiv.find(".attState2").addClass("disable");
+            targetDiv.find(".hpBar i").css("width",targetUnit.attHP+"%");
+            targetDiv.find(".tip").html(tipStr).show().animate({"top":-40,opacity:0},1000,function(){
+                $(this).animate({"top":-22,opacity:100},0).hide();
+            });
+            
+            //判断对方是否死亡
+            if(targetUnit.attHP<=0){
+                var team = targetUnit.attTeam=="our"?ourTeam:enemyTeam;
+                var unitDiv = $("."+targetUnit.attName);
+                unitDiv.remove();
+                //更新禁止坐标
+                forbiddenPoint.splice(common.indexOf2Array([targetUnit.x,targetUnit.y],forbiddenPoint),1);
+                //删除单位
+                team.splice(team.indexOf(targetUnit),1);
+                common.print("<span class='red'>["+this.attName+"]击败了["+targetUnit.attName+"]</span>");
+                common.isGameOver();
+            }
+            this.checkState();
+        }
+        //防御
+        this.defense=function(){
+            var unitDiv = $("."+this.attName);
+            this.attBuff=[[20,1,turn],[20,1,turn]];
+            this.attState[2]=0;
+            unitDiv.find(".attState2").addClass("disable");
+            common.print("["+this.attName+"]进行防御<span class='green'>(防御力+20，闪避率+20，持续1回合)</span>");
+            this.checkState();
+        }
+        //获取攻击目标（优先血量低）
+        this.getAttackUnit=function(){
+            var targetUnit;
+            var _attackRange=this.creatAttackRange();
+            for (let k = 0; k < ourTeam.length; k++) {
+                if( common.indexOf2Array([ourTeam[k].x,ourTeam[k].y],_attackRange)!=-1 &&( targetUnit==undefined || ourTeam[k].attHP<targetUnit.attHP )){
+                    targetUnit=ourTeam[k];
+                }
+            }
+            if(targetUnit==undefined){
+                common.print("["+this.attName+"]没有找到攻击目标");
+            }else{
+                common.print("["+this.attName+"]找到攻击目标["+targetUnit.attName+"]");
+            }
+            return targetUnit;
+        }
+        //获取移动目标（优先近距离）
+        this.getMoveToUnit=function(){
+            //查找对方最近单位
+            var distance=999;
+            var targetUnit;
+            for (let j = 0; j < ourTeam.length; j++) {
+                var oUnit = ourTeam[j];
+                var _distance=Math.abs(this.x-oUnit.x)+Math.abs(this.y-oUnit.y);
+                if( _distance<distance ){
+                    distance=_distance;
+                    targetUnit=oUnit;
+                }
+            }
+            if(targetUnit==undefined){
+                common.print("["+this.attName+"]没有找移动目标");
+            }else{
+                common.print("["+this.attName+"]找到移动目标["+targetUnit.attName+"]");
+            }
+            return targetUnit;
+        }
+        //获取移动目标的移动坐标
+        this.getMoveToPoint=function(){
+            var targetUnit = this.getMoveToUnit();
+            var _moveRange=this.creatMoveRange();
+            var targetPoint=[];
+            var distance=999;
+            for (let k = 0; k < _moveRange.length; k++) {
+                var _distance=Math.abs(_moveRange[k][0]-targetUnit.x)+Math.abs(_moveRange[k][1]-targetUnit.y);
+                if( _distance<distance ){
+                    distance=_distance;
+                    targetPoint=_moveRange[k];
+                }
+            }
+            if(targetPoint.length>0){
+                //common.print("["+this.attName+"]找到离对方最近单位的移动坐标为["+targetPoint[0]+","+targetPoint[1]+"]");
+            }else{
+                common.print("["+this.attName+"]没有找到移动目标的移动坐标");
+            }
+            return targetPoint;
+        }
+        //结束自己行动
+        this.end=function(){
+            common.clearSelecting();
+            var unitDiv = $("."+this.attName);
+            this.attState[1]=0;
+            this.attState[2]=0;
+            unitDiv.addClass("actionEnd");
+            common.print("["+this.attName+"]结束行动");
+            if(common.isTeamEnd()){
+                common.print(actionTurn==0?"敌方结束行动":"我方结束行动");
+                common.nextTurn();
+            }
+        }
+        //检查自己状态
+        this.checkState=function(){
+            if(this.attState[1]==0&&this.attState[2]==0){
+                this.end();
+            }
+        }
+    }
+    //障碍物对象
+    var Obstacle = function(){
+        this.attID=0;
+        this.x=0;
+        this.y=0;
+    }
+
+    //公用函数 =====================================================
+    var common ={
+        //随机数
+        randomNum:function(min,max){
+            return Math.round((Math.random()*(max-min))+min);
+        },
+        //添加单位
+        addUnit:function(count,team){
+            for (let i = 0; i < count; i++) {
+                var unit = new Unit();
+                unit.attID = i;
+                unit.attTeam = team;
+                unit.attName = unit.attTeam+unit.attID;
+                //unit.attHP=common.randomNum(90,100);
+                unit.attAtt=common.randomNum(40,50);
+                unit.attDef=common.randomNum(20,25);
+                unit.attHitRate=common.randomNum(85,95);
+
+                var creatPoint=function(){
+                    unit.x=team=="our"?common.randomNum(5,20):common.randomNum(30,44);
+                    unit.y=common.randomNum(5,20);
+                    if(common.indexOf2Array([unit.x,unit.y],forbiddenPoint)!=-1){
+                        creatPoint();
+                    }
+                }
+                creatPoint();
+
+                var left = unit.x*unitSize;
+                var top = unit.y*unitSize;
+                var unitHtml = '<div class="'+team+' '+team+unit.attID+'" id="'+unit.attID+'" style="top:'+top+'px; left:'+left+'px;"><i class="tip">0</i><span class="hpBar"><i style="width:'+unit.attHP+'%"></i></span><div class="attPanel"><span class="HP">生命:'+unit.attHP+'</span><span class="Att">攻击:'+unit.attAtt+'</span><span class="Def">防御:'+unit.attDef+'</span><span class="hitRate">命中:'+unit.attHitRate+'</span></div><div class="actionPanel"><ul><li class="actMove">移动</li><li class="attState2 actAttack">攻击</li><li class="attState2 actDefense">防御</li><li class="actEnd">结束</li></ul></div><span class="id">'+unit.attID+'</span></div>';
+                $("#main").append(unitHtml);
+
+                if(team=="our"){
+                    ourTeam[i]=unit;
+                }else{
+                    enemyTeam[i]=unit;
+                }
+                forbiddenPoint.push([unit.x,unit.y]);
+            }
+        },
+        //添加障碍物
+        addObstacle:function(count){
+            for (let i = 0; i < count; i++) {
+                var unit = new Obstacle();
+                unit.attID = i;
+                unit.x=common.randomNum(0,49);
+                unit.y=common.randomNum(0,24);
+
+                var left = unit.x*unitSize;
+                var top = unit.y*unitSize;
+                var unitHtml = '<div class="obstacle obstacle'+unit.attID+'" id="'+unit.attID+'" style="top:'+top+'px; left:'+left+'px;"></div>';
+                $("#main").append(unitHtml);
+                obstacleTeam.push(unit);
+                forbiddenPoint.push([unit.x,unit.y]);
+            }
+        },
+        //返回所在二维数字内的位置
+        indexOf2Array:function(arry,towArrys){
+            var index = -1;
+            for (let i = 0; i < towArrys.length; i++) {
+                if(towArrys[i][0] == arry[0] && towArrys[i][1] == arry[1]){
+                    index=i;
+                    break;
+                }
+            }
+            return index;
+        },
+        //更新单位属性面板
+        updateAttPanel:function(unit){
+            var unitDiv = $("."+unit.attName);
+            unitDiv.find(".attPanel .HP").html("生命:"+unit.attHP);
+        },
+        //更新回合
+        updateTurn:function(){
+            $("#actionTurn").html(actionTurn==0?"敌方":"我方");
+            $("#turn").html(parseInt(turn/2));
+        },
+        //清理队伍内置属性
+        clearTeamState:function(team){
+            for (let i = 0; i < team.length; i++) {
+                team[i].attState[1]=1;
+                team[i].attState[2]=1;
+                for (let k = 0; k < team[i].attBuff.length; k++) {
+                    var buffTurn = team[i].attBuff[k][2];
+                    if(turn-buffTurn>=team[i].attBuff[k][1]*2){
+                        team[i].attBuff[k]=[0,0,0];
+                    }
+                }
+            }
+        },
+        //清理所有单位状态
+        clearState:function(){
+            common.updateTurn();
+            //清理状态
+            common.clearTeamState(ourTeam);
+            common.clearTeamState(enemyTeam);
+            $(".our").removeClass("actionEnd");
+            $(".enemy").removeClass("actionEnd");
+            $(".actionPanel li").removeClass("disable");
+        },
+        //下一队伍行动
+        nextTurn:function(){
+            actionTurn=actionTurn==0?1:0;
+            turn++;
+            var tempFun = function(){
+                common.print("<b>"+(actionTurn==0?"敌方":"我方")+"行动>>>></b>");
+                common.clearState();
+                common.showMainTip((actionTurn==0?"敌方":"我方")+"行动",function(){
+                    if(actionTurn==0){
+                        common.enemyAction();
+                    }else{
+                        common.print("等待我方行动");
+                    }
+                });
+            }
+            if(turn%2==0){
+                common.print("<b>第"+parseInt(turn/2)+"回合--------------------------------------</b>");
+                common.showMainTip("第"+parseInt(turn/2)+"回合",tempFun);
+            }else{
+                tempFun();
+            }
+
+        },
+        //清除已选择状态
+        clearSelecting:function(){
+            $(".actionPanel").hide();
+            $(".mapUnit").removeClass("moving");
+            $(".mapUnit").removeClass("attacking");
+            $(".our").removeClass("currentUnit");
+        },
+        //判断队伍状态
+        isTeamEnd:function(){
+            var endCount = 0;
+            var team = actionTurn==0?enemyTeam:ourTeam;
+            for (let i = 0; i < team.length; i++) {
+                if(team[i].attState[1]==0&&team[i].attState[2]==0){
+                    endCount++;
+                }
+            }
+            if(endCount>=team.length){
+                return true;
+            }else{
+                return false;
+            }
+        },
+        //判断游戏结束
+        isGameOver:function(){
+            if(enemyTeam.length==0||ourTeam.length==0){
+                var str= enemyTeam.length==0?"我方":"敌方";
+                common.print("游戏结束，"+str+"胜利");
+                common.showMainTip("游戏结束，"+str+"胜利",function(){},false);
+                return true;
+            }else{
+                return false;
+            }
+        },
+        //查找单位
+        getUnit:function(team,id){
+            var unit;
+            for (let i = 0; i < team.length; i++) {
+                if(team[i].attID == id){
+                    unit = team[i];
+                    return unit;
+                }
+            }
+        },
+        //敌方AI行动
+        enemyAction:function(){
+            if (actionTurn==1) return;
+            var i=0;
+            var _enemyAction = function(){
+                if( common.isGameOver() || i>=enemyTeam.length) return;
+                var eUnit = enemyTeam[i];
+                if(eUnit.attState[1]>0 || eUnit.attState[2]>0){
+                
+                    //逻辑判断
+                    var attUnit=eUnit.getAttackUnit();
+                    
+                    if(attUnit!=undefined){
+                        setTimeout(function(){
+                            eUnit.attack(attUnit);
+                            eUnit.end();
+                            setTimeout(function(){
+                                i++;
+                                _enemyAction();
+                            },400);
+                        },400);
+                    }else if(eUnit.attState[1]==1){
+                        var movePoint=eUnit.getMoveToPoint();
+                        if(movePoint.length>0){
+                            setTimeout(function(){
+                                eUnit.move(movePoint[0],movePoint[1]);
+                                var attUnit=eUnit.getAttackUnit();
+                                if(attUnit!=undefined){
+                                    setTimeout(function(){
+                                        eUnit.attack(attUnit);
+                                        setTimeout(function(){
+                                            i++;
+                                            _enemyAction();
+                                        },400);
+                                    },400);
+                                }else{
+                                    eUnit.end();
+                                    setTimeout(function(){
+                                        i++;
+                                        _enemyAction();
+                                    },400);
+                                }
+                            },400);
+                        }
+                    }
+
+                }
+            }
+            _enemyAction();
+        },
+        //打印情况
+        print:function(str){
+            //每15回合清空打印数据
+            if(turn%30==0){$("#print").html("")}
+            $("#print").html( str+"<br/>"+$("#print").html() );
+        },
+        //全局提示
+        showMainTip:function(str,callBack,endHide){
+            $("#mainTip").html(str).show().stop(true,true).animate({opacity:1},500,function(){
+                if(endHide==undefined || endHide ){
+                    $(this).stop(true,true).animate({opacity:0},500,function(){
+                        $(this).hide();
+                        callBack();
+                    });
+                }else{
+                    callBack();
+                }
+            })
+        }
+    };
+
+    //初始化========================================================
+    (function(){
+        //初始化棋盘
+        var chessboard = new Chessboard();
+        chessboard.init();
+        //初始化地图
+        var map = new Map();
+        map.init();
+        //初始化障碍物
+        common.addObstacle(obstacleTeam.length);
+        //初始化我方单位
+        common.addUnit(ourTeam.length,"our");
+        //初始化敌方单位
+        common.addUnit(enemyTeam.length,"enemy");
+        //初始化程序（入口）
+        actionTurn = 0;
+        common.nextTurn();
+    })();
+
+    //添加事件========================================================
+    (function(){
+        //开始
+        $("#btnRefresh").click(function(){
+            location.reload();
+        });
+        $("#btnEnd").click(function(){
+            if(common.isGameOver() || ( actionTurn==0 && !common.isTeamEnd()) ) return;
+            
+            common.print(actionTurn==0?"敌方结束行动":"我方结束行动");
+            common.nextTurn();
+        });
+        //菜单--移动
+        $(".actMove").on("click", function (e){
+            e.stopPropagation();
+            if(common.getUnit(ourTeam,currentUnitId).attState[1]<1) return;
+            $(".actionPanel").hide();
+            common.getUnit(ourTeam,currentUnitId).creatMoveRange();
+        })
+        //执行移动操作
+        $("#map .mapUnit").on("click",function(e){
+            e.stopPropagation();
+            if($(this).hasClass("moving")){
+                common.getUnit(ourTeam,currentUnitId).move(parseInt($(this).attr("x")),parseInt($(this).attr("y")));
+            }else{
+                common.clearSelecting();
+            }
+        });
+        //菜单--攻击
+        $(".actAttack").on("click", function (e){
+            e.stopPropagation();
+            if(common.getUnit(ourTeam,currentUnitId).attState[2]<1) return;
+            $(".actionPanel").hide();
+            common.getUnit(ourTeam,currentUnitId).creatAttackRange();
+        })
+        //执行攻击操作
+        $("#main .enemy").on("click",function(e){
+            e.stopPropagation();
+            var id = parseInt($(this).attr("id"));
+            common.getUnit(ourTeam,currentUnitId).attack(common.getUnit(enemyTeam,id));
+        });
+        //菜单--防御
+        $(".actDefense").on("click", function (e){
+            e.stopPropagation();
+            if(common.getUnit(ourTeam,currentUnitId).attState[2]<1) return;
+            $(".actionPanel").hide();
+            common.getUnit(ourTeam,currentUnitId).defense();
+        })
+        //菜单--结束
+        $(".actEnd").on("click", function (e){
+            e.stopPropagation();
+            common.getUnit(ourTeam,currentUnitId).end();
+            $(".actionPanel").hide();
+        })
+        //显示当前坐标
+        /*$("#map .mapUnit").on("mouseover",function(e){
+            e.stopPropagation();
+            $("#curX").html($(this).attr("x"));
+            $("#curY").html($(this).attr("y"));
+        });
+        */
+        //操作我方单位
+        $("#main .our").on("click",function(e){
+            e.stopPropagation();
+            if(actionTurn==0 || $(this).hasClass("actionEnd")) return;
+            //清除已选择
+            common.clearSelecting();
+            $(this).addClass("currentUnit");
+            //获取当前单位
+            var id=parseInt($(this).attr("id"));
+            currentUnitId = id;
+            $(this).find(".actionPanel").show();
+        });
+        //地图事件
+        $("#map").click(function(){
+            common.clearSelecting();
+        })
+    })();
+
+</script>

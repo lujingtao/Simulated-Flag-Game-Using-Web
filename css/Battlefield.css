@@ -1,0 +1,47 @@
+@charset "utf-8";
+*{padding: 0; margin: 0; list-style: none; font-style: normal}
+body{padding:20px; text-align: center; font-size: 14px}
+button{padding:0 5px; margin:0 10px 0 0;}
+.title{text-align: center; margin-bottom: 20px;}
+#content{border:1px solid #ccc; width:1000px; text-align: left; margin:0 auto;}
+#setting{padding:15px; border-bottom:1px solid #ccc}
+#setting .state{float: right;}
+#setting .state li{float: right; margin-left:10px;}
+#btnStart{padding:0 10px;}
+#chessboard{ display: block; background: #000}
+#main,#map{width: 100%; height: 500px; position: relative;}
+#map{position: absolute; left:0; top:0}
+#main .our,#main .enemy, #main .obstacle{width: 20px; height: 20px; background: #0064ff; position: absolute; text-align:center; color:#fff; 
+    cursor: pointer; border-radius:100px;
+    -webkit-transition:400ms;-o-transition:400ms;-moz-transition:400ms;transition:400ms;
+}
+#main .obstacle{ cursor: default; border-radius:0; background:#ccc; }
+#main .obstacle:after{ content:""; position: absolute; top:50%; margin-top: -10px; left:0; border:10px solid; border-color:transparent  transparent  #333 transparent;}
+#main .tip{display: none; position: absolute; width: 100%; left:0; text-align:center; top:-22px; color:#f00;}
+#main .enemy{background: #f00}
+#main .actionEnd{ opacity: 0.5;}
+#main .attPanel{ display: none; position: absolute; width:50px; left:-60px; top:0; background: #ccc; font-size: 12px; text-align:left; color:#333; padding:5px;}
+#main .attPanel span{display: block;}
+#main .our:hover,
+#main .enemy:hover{ z-index: 1;}
+#main .our:hover .attPanel,
+#main .enemy:hover .attPanel{ display:block;}
+#main .currentUnit{z-index: 2}
+#main .hpBar{position: absolute;display:block;width: 100%;top: -7px;left:0;height: 3px;background:#aaa;}
+#main .hpBar i{display:block; background: #0f0; height: 3px;
+    -webkit-transition:400ms;-o-transition:400ms;-moz-transition:400ms;transition:400ms;
+}
+#main .actionPanel{ display: none; position: absolute; width: 50px; left: 20px; top: 0; background: #3584ff; padding:5px 0}
+#main .actionPanel li{padding:2px 0;}
+#main .actionPanel .disable{background:3584ff !important; color:#88b7ff }
+#main .actionPanel li:hover{background: #0064ff}
+#map .mapUnit{ width: 20px; height: 20px; position: absolute;}
+#map .moving{background: rgba(0,255,0,.2); cursor: pointer;}
+#map .moving:hover{background: rgba(0,255,0,.5)}
+#map .attacking{background: rgba(255,0,0,.2); cursor: pointer;}
+#map .attacking:hover{background: rgba(255,0,0,.5)}
+#print{ height: 300px; overflow-y:scroll; border-top:1px solid #ccc; padding:10px; font-size:12px; line-height: 2; font-family: simsun }
+#print .red{color: red}
+#print .blue{color: blue}
+#print .green{color: green}
+#mainTip{ display: none; left:0; top:0; opacity: 0; position:absolute; width: 100%; height: 500px; text-align: center; line-height:500px; font-size: 40px; z-index: 3; background: rgba(0,0,0,.2)}
