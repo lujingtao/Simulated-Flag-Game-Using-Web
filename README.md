@@ -3,7 +3,7 @@
 
 本次尝试用web技术实现战旗游戏中战场的游戏逻辑，抛砖引玉。
 
-先放成果：在线地址
+先放成果：[**在线地址**](https://lujingtao.github.io/Simulated-Flag-Game-Using-Web/)
 
 # 游戏逻辑
 战旗游戏逻辑比较简单：
