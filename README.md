@@ -29,3 +29,5 @@ AI逻辑：判断攻击范围有无敌人，有则攻击(优先血量少)，无�
 - 随机地图生成时可能把单位围住，算法待完善
 - 移动范围生成时没有处理障碍物阻挡造成移动范围减少情况，算法待完善
 - 目前寻路算法比较简单，可以改成使用A*寻路算法
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190919085319147.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2lhbWx1amluZ3Rhbw==,size_16,color_FFFFFF,t_70)
